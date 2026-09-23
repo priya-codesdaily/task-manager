@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Task Manager</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 500px; margin: 40px auto; padding: 0 20px; }
+        input, button { padding: 8px; margin: 5px 0; width: 100%; box-sizing: border-box; }
+        button { cursor: pointer; background: #333; color: white; border: none; }
+        button:hover { background: #555; }
+        #taskList { list-style: none; padding: 0; }
+        #taskList li { display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px solid #eee; }
+        .completed { text-decoration: line-through; color: gray; }
+        #taskSection { display: none; }
+        .error { font-size: 14px; }
+        #filterBar button, #taskList button, #taskSection > p button { width: auto; padding: 5px 10px; margin-right: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Task Manager</h1>
+
+    <div id="authSection">
+        <h2>Login or Sign Up</h2>
+        <input type="text" id="username" placeholder="Username">
+        <input type="password" id="password" placeholder="Password">
+        <button onclick="login()">Login</button>
+        <button onclick="signup()">Sign Up</button>
+        <p class="error" id="authError"></p>
+    </div>
+
+    <div id="taskSection">
+        <p>Welcome, <span id="welcomeUser"></span>! <button onclick="logout()">Logout</button></p>
+        <input type="text" id="newTask" placeholder="New task...">
+        <button onclick="addTask()">Add Task</button>
+        <div id="filterBar">
+            <button onclick="setFilter(\x27all\x27)">All</button>
+            <button onclick="setFilter(\x27pending\x27)">Pending</button>
+            <button onclick="setFilter(\x27completed\x27)">Completed</button>
+        </div>
+        <ul id="taskList"></ul>
+    </div>
+
+    <script>
+        let token = localStorage.getItem("token");
+        let username = localStorage.getItem("username");
+        let currentFilter = "all";
+        let allTasks = [];
+
+        if (token) showTaskSection();
+
+        function showTaskSection() {
+            document.getElementById("authSection").style.display = "none";
+            document.getElementById("taskSection").style.display = "block";
+            document.getElementById("welcomeUser").innerText = username;
+            loadTasks();
+        }
+
+        async function signup() {
+            const uname = document.getElementById("username").value;
+            const pass = document.getElementById("password").value;
+            const res = await fetch("/api/signup", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ username: uname, password: pass })
+            });
+            const data = await res.json();
+            const errorEl = document.getElementById("authError");
+            if (res.ok) {
+                errorEl.style.color = "green";
+                errorEl.innerText = "Account created! Now click Login.";
+            } else {
+                errorEl.style.color = "red";
+                errorEl.innerText = data.error;
+            }
+        }
+
+        async function login() {
+            const uname = document.getElementById("username").value;
+            const pass = document.getElementById("password").value;
+            const res = await fetch("/api/login", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ username: uname, password: pass })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                token = data.token;
+                username = data.username;
+                localStorage.setItem("token", token);
+                localStorage.setItem("username", username);
+                showTaskSection();
+            } else {
+                const errorEl = document.getElementById("authError");
+                errorEl.style.color = "red";
+                errorEl.innerText = data.error;
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem("token");
+            localStorage.removeItem("username");
+            location.reload();
+        }
+
+        async function loadTasks() {
+            const res = await fetch("/api/tasks", {
+                headers: { Authorization: "Bearer " + token }
+            });
+            allTasks = await res.json();
+            renderTasks();
+        }
+
+        function setFilter(f) {
+            currentFilter = f;
+            renderTasks();
+        }
+
+        function renderTasks() {
+            const list = document.getElementById("taskList");
+            list.innerHTML = "";
+            let filtered = allTasks;
+            if (currentFilter === "pending") filtered = allTasks.filter(t => !t.completed);
+            if (currentFilter === "completed") filtered = allTasks.filter(t => t.completed);
+
+            filtered.forEach(task => {
+                const li = document.createElement("li");
+                const span = document.createElement("span");
+                span.innerText = task.text;
+                if (task.completed) span.className = "completed";
+                span.style.cursor = "pointer";
+                span.onclick = () => toggleTask(task._id);
+
+                const delBtn = document.createElement("button");
+                delBtn.innerText = "Delete";
+                delBtn.onclick = () => deleteTask(task._id);
+
+                li.appendChild(span);
+                li.appendChild(delBtn);
+                list.appendChild(li);
+            });
+        }
+
+        async function addTask() {
+            const text = document.getElementById("newTask").value.trim();
+            if (!text) return;
+            await fetch("/api/tasks", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: "Bearer " + token
+                },
+                body: JSON.stringify({ text })
+            });
+            document.getElementById("newTask").value = "";
+            loadTasks();
+        }
+
+        async function toggleTask(id) {
+            await fetch("/api/tasks/" + id, {
+                method: "PUT",
+                headers: { Authorization: "Bearer " + token }
+            });
+            loadTasks();
+        }
+
+        async function deleteTask(id) {
+            await fetch("/api/tasks/" + id, {
+                method: "DELETE",
+                headers: { Authorization: "Bearer " + token }
+            });
+            loadTasks();
+        }
+    </script>
+</body>
+</html>
